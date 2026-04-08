@@ -1,0 +1,70 @@
+# =========================
+# ENV & Secrets (VERY IMPORTANT)
+# =========================
+.env
+.env.*
+*.env
+
+# API keys / configs
+config.js
+dbConfig.js
+secrets.json
+
+# =========================
+# Node modules & logs
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# Build / Production
+# =========================
+dist/
+build/
+.next/
+out/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# Uploads / User Data (important for your project)
+# =========================
+uploads/
+user_data/
+private_files/
+
+# =========================
+# Temporary files
+# =========================
+tmp/
+temp/
+
+# =========================
+# Database files
+# =========================
+*.sqlite
+*.db
+
+# =========================
+# Misc
+# =========================
+coverage/
+.cache/

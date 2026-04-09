@@ -6,25 +6,38 @@ import { GoogleLogin } from '@react-oauth/google';
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
   const { login, googleLogin } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await login(email, password);
-      navigate('/dashboard');
+      setLoading(true);
+      setError('');
+      const data = await login(email, password);
+      
+      if (data.requiresVerification) {
+        navigate('/verify-email', { state: { email } });
+      } else {
+        navigate('/dashboard');
+      }
     } catch (error) {
-      alert(error.response?.data?.message || 'Invalid credentials or server error');
+      setError(error.response?.data?.message || 'Invalid credentials or server error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleGoogleSuccess = async (response) => {
     try {
+      setError('');
       await googleLogin(response.credential);
       navigate('/dashboard');
     } catch (error) {
-      alert('Google authentication failed');
+      setError('Google authentication failed');
     }
   };
 
@@ -36,6 +49,12 @@ const Login = () => {
             <h2 className="page-title" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>Login</h2>
             <p style={{ color: 'var(--subtext)', fontSize: '0.95rem' }}>Welcome back to StudyShare.</p>
         </div>
+
+        {error && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '24px', fontSize: '0.85rem', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+            {error}
+          </div>
+        )}
         
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -47,6 +66,7 @@ const Login = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
           <div className="form-group">
@@ -58,10 +78,11 @@ const Login = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '16px', marginTop: '12px' }}>
-            Secure Login
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '16px', marginTop: '12px' }} disabled={loading}>
+            {loading ? 'Logging in...' : 'Secure Login'}
           </button>
         </form>
 

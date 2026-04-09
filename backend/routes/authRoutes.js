@@ -1,10 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser, getMe, getLeaderboard, googleAuth } = require('../controllers/authController');
+const rateLimit = require('express-rate-limit');
+const { 
+  registerUser, 
+  loginUser, 
+  verifyOTP, 
+  resendOTP,
+  getMe, 
+  getLeaderboard, 
+  googleAuth 
+} = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
-router.post('/signup', registerUser);
-router.post('/login', loginUser);
+// Rate limiting for auth
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Max 10 attempts
+  message: { message: "Too many attempts, please try again after 15 minutes" }
+});
+
+router.post('/signup', authLimiter, registerUser);
+router.post('/login', authLimiter, loginUser);
+router.post('/verify-otp', verifyOTP);
+router.post('/resend-otp', resendOTP);
 router.post('/google', googleAuth);
 router.get('/me', protect, getMe);
 router.get('/leaderboard', protect, getLeaderboard);

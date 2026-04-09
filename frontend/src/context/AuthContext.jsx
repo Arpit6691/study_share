@@ -32,17 +32,33 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const res = await axios.post('/auth/login', { email, password });
+    
+    // If user is verified, log them in
+    if (!res.data.requiresVerification) {
+      localStorage.setItem('token', res.data.token);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
+      setUser(res.data);
+    }
+    
+    return res.data;
+  };
+
+  const register = async (name, username, email, password) => {
+    const res = await axios.post('/auth/signup', { name, username, email, password });
+    // Registration now requires verification, so we don't log them in yet
+    return res.data;
+  };
+
+  const verifyOTP = async (email, otp) => {
+    const res = await axios.post('/auth/verify-otp', { email, otp });
     localStorage.setItem('token', res.data.token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
     setUser(res.data);
     return res.data;
   };
 
-  const register = async (name, username, email, password) => {
-    const res = await axios.post('/auth/signup', { name, username, email, password });
-    localStorage.setItem('token', res.data.token);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
-    setUser(res.data);
+  const resendOTP = async (email) => {
+    const res = await axios.post('/auth/resend-otp', { email });
     return res.data;
   };
 
@@ -67,7 +83,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, googleLogin, logout, updateUploadCount }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      login, 
+      register, 
+      verifyOTP, 
+      resendOTP, 
+      googleLogin, 
+      logout, 
+      updateUploadCount 
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -10,25 +10,35 @@ const Signup = () => {
     email: '',
     password: ''
   });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
   const { register, googleLogin } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await register(formData.name, formData.username, formData.email, formData.password);
-      navigate('/dashboard');
+      setLoading(true);
+      setError('');
+      const data = await register(formData.name, formData.username, formData.email, formData.password);
+      
+      // If registration successful, redirect to verify email
+      navigate('/verify-email', { state: { email: formData.email } });
     } catch (error) {
-      alert(error.response?.data?.message || 'Wait! Registration failed. User might already exist.');
+      setError(error.response?.data?.message || 'Wait! Registration failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleGoogleSuccess = async (response) => {
     try {
+      setError('');
       await googleLogin(response.credential);
       navigate('/dashboard');
     } catch (error) {
-      alert('Google authentication failed');
+      setError('Google authentication failed');
     }
   };
 
@@ -40,6 +50,12 @@ const Signup = () => {
             <h2 className="page-title" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>Create Account</h2>
             <p style={{ color: 'var(--subtext)', fontSize: '0.95rem' }}>Join thousands of students sharing notes.</p>
         </div>
+
+        {error && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '24px', fontSize: '0.85rem', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+            {error}
+          </div>
+        )}
         
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -51,6 +67,7 @@ const Signup = () => {
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
               required
+              disabled={loading}
             />
           </div>
           <div className="form-group">
@@ -62,6 +79,7 @@ const Signup = () => {
               value={formData.username}
               onChange={(e) => setFormData({...formData, username: e.target.value})}
               required
+              disabled={loading}
             />
           </div>
           <div className="form-group">
@@ -73,6 +91,7 @@ const Signup = () => {
               value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}
               required
+              disabled={loading}
             />
           </div>
           <div className="form-group">
@@ -80,14 +99,15 @@ const Signup = () => {
             <input 
               type="password" 
               className="input"
-              placeholder="••••••••" 
+              placeholder="Min 8 chars, 1 uppercase, 1 symbol" 
               value={formData.password}
               onChange={(e) => setFormData({...formData, password: e.target.value})}
               required
+              disabled={loading}
             />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '16px', marginTop: '12px' }}>
-            Get Started
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '16px', marginTop: '12px' }} disabled={loading}>
+            {loading ? 'Creating Account...' : 'Get Started'}
           </button>
         </form>
 

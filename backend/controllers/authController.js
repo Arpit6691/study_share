@@ -68,17 +68,16 @@ const registerUser = async (req, res) => {
     });
 
     if (user) {
-      // 8. Send OTP Email
-      const emailSent = await sendOTPEmail(email, name, otp);
+      console.log(`User created: ${email}. Sending OTP...`);
       
-      if (!emailSent) {
-        // Technically user was created but email failed. 
-        // In production you might want to handle this better (e.g., delete user or allow resend)
-        console.error("Failed to send verification email to", email);
-      }
+      // Send OTP Email in background (don't await so the UI responds immediately)
+      sendOTPEmail(email, name, otp).then(sent => {
+        if (!sent) console.error(`Failed to send OTP to ${email}`);
+        else console.log(`OTP sent successfully to ${email}`);
+      });
 
-      res.status(201).json({
-        message: 'Registration successful! Please check your email for the verification code.',
+      return res.status(201).json({
+        message: 'Registration successful! Verification code sent.',
         email: user.email,
         requiresVerification: true
       });
@@ -298,6 +297,27 @@ const googleAuth = async (req, res) => {
   }
 };
 
+/**
+ * Diagnostic: Test Email Settings
+ */
+const testEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Target email is required' });
+    
+    console.log(`Running diagnostic email test for: ${email}`);
+    const result = await sendOTPEmail(email, "Tester", "123456");
+    
+    if (result) {
+      res.status(200).json({ message: 'Test email sent! Check your inbox/spam.' });
+    } else {
+      res.status(500).json({ message: 'Email test failed. Check server logs for the exact error.' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   verifyOTP,
@@ -306,4 +326,5 @@ module.exports = {
   getMe,
   getLeaderboard,
   googleAuth,
+  testEmail,
 };

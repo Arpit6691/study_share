@@ -8,7 +8,8 @@ const {
   resendOTP,
   getMe, 
   getLeaderboard, 
-  googleAuth 
+  googleAuth,
+  testEmail
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -24,6 +25,7 @@ router.post('/login', authLimiter, loginUser);
 router.post('/verify-otp', verifyOTP);
 router.post('/resend-otp', resendOTP);
 router.post('/google', googleAuth);
+router.post('/test-email', testEmail);
 router.get('/me', protect, getMe);
 router.get('/leaderboard', protect, getLeaderboard);
 

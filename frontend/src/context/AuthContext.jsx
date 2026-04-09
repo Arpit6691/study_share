@@ -8,7 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Setup axios default config
-  axios.defaults.baseURL = 'http://localhost:5000/api';
+  axios.defaults.baseURL = 'https://study-share-54d7.onrender.com/api';
 
   useEffect(() => {
     const checkLoggedIn = async () => {

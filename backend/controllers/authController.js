@@ -38,14 +38,17 @@ const registerUser = async (req, res) => {
     }
 
     // 4. Check if user already exists
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: 'Email is already registered' });
+    let user = await User.findOne({ email });
+    if (user && user.isVerified) {
+      return res.status(400).json({ message: 'Email is already registered. Please log in.' });
     }
 
-    const usernameExists = await User.findOne({ username });
-    if (usernameExists) {
-      return res.status(400).json({ message: 'Username is already taken' });
+    // Check if username is taken by someone else
+    const userWithUsername = await User.findOne({ username });
+    if (userWithUsername) {
+      if (!user || userWithUsername.email !== email) {
+        return res.status(400).json({ message: 'Username is already taken by another user.' });
+      }
     }
 
     // 5. Hash password
@@ -56,21 +59,32 @@ const registerUser = async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // 7. Create User (unverified)
-    const user = await User.create({
-      name,
-      username,
-      email,
-      password: hashedPassword,
-      otp,
-      otpExpiresAt,
-      isVerified: false
-    });
+    // 7. Create or Update User (unverified)
+    if (user) {
+      // Re-signing up as an unverified user - update info and send new OTP
+      user.name = name;
+      user.username = username;
+      user.password = hashedPassword;
+      user.otp = otp;
+      user.otpExpiresAt = otpExpiresAt;
+      await user.save();
+      console.log(`Unverified user ${email} updated. Re-sending OTP...`);
+    } else {
+      // New user registration
+      user = await User.create({
+        name,
+        username,
+        email,
+        password: hashedPassword,
+        otp,
+        otpExpiresAt,
+        isVerified: false
+      });
+      console.log(`New user created: ${email}. Sending OTP...`);
+    }
 
     if (user) {
-      console.log(`User created: ${email}. Sending OTP...`);
-      
-      // Send OTP Email in background (don't await so the UI responds immediately)
+      // Send OTP Email in background
       sendOTPEmail(email, name, otp).then(sent => {
         if (!sent) console.error(`Failed to send OTP to ${email}`);
         else console.log(`OTP sent successfully to ${email}`);

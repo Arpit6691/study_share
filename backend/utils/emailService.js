@@ -1,22 +1,25 @@
 const nodemailer = require('nodemailer');
 
 const sendOTPEmail = async (email, name, otp) => {
-  console.log(`Attempting to send OTP email to ${email}...`);
+  console.log(`[EMAIL] Attempting to send OTP to ${email}...`);
   
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.error('ERROR: EMAIL_USER or EMAIL_PASS environment variables are missing!');
+    console.error('[EMAIL] ERROR: Missing credentials in environment variables.');
     return false;
   }
 
   try {
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // use SSL
+      port: 587,
+      secure: false, // Use STARTTLS
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
+      tls: {
+        rejectUnauthorized: false // Helps with some hosting provider restrictions
+      }
     });
 
     const mailOptions = {
@@ -24,29 +27,31 @@ const sendOTPEmail = async (email, name, otp) => {
       to: email,
       subject: 'Verify Your Email - StudyShare',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-          <h2 style="color: #7c5cff; text-align: center;">Welcome to StudyShare!</h2>
-          <p>Hi ${name},</p>
-          <p>Thank you for joining our community. To complete your registration, please verify your email address by entering the following OTP:</p>
-          <div style="background-color: #f4f2ff; padding: 15px; text-align: center; border-radius: 8px; margin: 20px 0;">
-            <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #7c5cff;">${otp}</span>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #7c5cff; border-radius: 12px; background-color: #ffffff;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="color: #7c5cff; margin: 0;">StudyShare</h1>
+            <p style="color: #666; font-size: 14px;">Your Gateway to Better Grades</p>
           </div>
-          <p>This code will expire in 10 minutes.</p>
-          <p>If you did not request this code, please ignore this email.</p>
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="font-size: 12px; color: #888; text-align: center;">&copy; 2026 StudyShare. All rights reserved.</p>
+          <div style="padding: 20px; border-radius: 8px; background-color: #f9f9f9; border: 1px solid #eee;">
+            <p style="font-size: 16px; color: #333;">Hi <strong>${name}</strong>,</p>
+            <p style="font-size: 15px; color: #555; line-height: 1.5;">To complete your registration and start downloading notes, please use the verification code below:</p>
+            <div style="background-color: #7c5cff; color: #ffffff; padding: 15px; text-align: center; border-radius: 8px; margin: 25px 0;">
+              <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px;">${otp}</span>
+            </div>
+            <p style="font-size: 13px; color: #888; text-align: center;">This code will expire in 10 minutes. If you did not sign up, please disregard this message.</p>
+          </div>
+          <p style="font-size: 12px; color: #aaa; text-align: center; margin-top: 30px;">
+            &copy; 2026 StudyShare Platform. Built with ❤️ for students.
+          </p>
         </div>
       `,
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully:', info.messageId);
+    console.log('[EMAIL] Success! Message sent: %s', info.messageId);
     return true;
   } catch (error) {
-    console.error('CRITICAL Email sending failed:', error.message);
-    if (error.code === 'EAUTH') {
-      console.error('Authentication Error: Please check if your App Password is correct.');
-    }
+    console.error('[EMAIL] CRITICAL ERROR:', error.message);
     return false;
   }
 };

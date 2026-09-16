@@ -7,8 +7,16 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Setup axios default config
-  axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  // Setup axios default config with automatic production Render backend fallback
+  const getApiUrl = () => {
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return 'https://study-share-54d7.onrender.com/api';
+    }
+    return 'http://localhost:5000/api';
+  };
+  
+  axios.defaults.baseURL = getApiUrl();
 
   // Request interceptor to automatically attach authorization token if present
   axios.interceptors.request.use((config) => {

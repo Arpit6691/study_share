@@ -8,7 +8,16 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Setup axios default config
-  axios.defaults.baseURL = 'https://study-share-54d7.onrender.com/api';
+  axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+  // Request interceptor to automatically attach authorization token if present
+  axios.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  }, (error) => Promise.reject(error));
 
   useEffect(() => {
     const checkLoggedIn = async () => {

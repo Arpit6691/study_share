@@ -4,22 +4,17 @@ const sendOTPEmail = async (email, name, otp) => {
   console.log(`[EMAIL] Attempting to send OTP to ${email}...`);
   
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.error('[EMAIL] ERROR: Missing credentials in environment variables.');
+    console.warn('[EMAIL] WARNING: EMAIL_USER or EMAIL_PASS not set in .env');
     return false;
   }
 
   try {
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // Use STARTTLS
+      service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        pass: process.env.EMAIL_PASS.replace(/\s+/g, ''), // Remove accidental spaces
       },
-      tls: {
-        rejectUnauthorized: false // Helps with some hosting provider restrictions
-      }
     });
 
     const mailOptions = {
@@ -51,7 +46,7 @@ const sendOTPEmail = async (email, name, otp) => {
     console.log('[EMAIL] Success! Message sent: %s', info.messageId);
     return true;
   } catch (error) {
-    console.error('[EMAIL] CRITICAL ERROR:', error.message);
+    console.error('[EMAIL] Send Error:', error.message);
     return false;
   }
 };

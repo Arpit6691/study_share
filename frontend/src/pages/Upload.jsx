@@ -38,16 +38,13 @@ const Upload = () => {
 
     try {
       setLoading(true);
-      await axios.post('/notes', data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      await axios.post('/notes', data);
       updateUploadCount();
       alert('File uploaded successfully! Your score has increased.');
       navigate('/dashboard');
     } catch (error) {
-      alert(error.response?.data?.message || 'Upload failed');
+      console.error('Upload error:', error);
+      alert(error.response?.data?.message || error.response?.data?.error || error.message || 'Upload failed');
     } finally {
       setLoading(false);
     }

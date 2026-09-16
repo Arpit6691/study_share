@@ -6,7 +6,7 @@ const storage = multer.diskStorage({
   destination(req, file, cb) {
     const uploadDir = path.join(__dirname, '..', 'uploads');
     if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir);
+      fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
@@ -19,15 +19,13 @@ const storage = multer.diskStorage({
 });
 
 function checkFileType(file, cb) {
-  const filetypes = /pdf|doc|docx|ppt|pptx|txt/;
-  const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-  // Some browsers send different mimetypes, so we mostly rely on extname for this test project
-  // but it's good practice to check mimetype too if possible.
+  const allowedExtensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt'];
+  const ext = path.extname(file.originalname || '').toLowerCase();
   
-  if (extname) {
+  if (allowedExtensions.includes(ext)) {
     return cb(null, true);
   } else {
-    cb(new Error('Images and unsupported types are not allowed. Please upload Document files (PDF, DOC, DOCX, PPT, TXT).'));
+    cb(new Error('Images and unsupported types are not allowed. Please upload Document files (PDF, DOC, DOCX, PPT, PPTX, TXT).'));
   }
 }
 

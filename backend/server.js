@@ -4,9 +4,19 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns');
 
 // Load environment variables as early as possible
 dotenv.config();
+
+// Ensure Node.js can resolve MongoDB Atlas SRV records on Windows
+if (process.env.MONGO_URI && process.env.MONGO_URI.startsWith('mongodb+srv://')) {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+  } catch (err) {
+    console.warn('Could not set custom DNS servers:', err.message);
+  }
+}
 
 const authRoutes = require('./routes/authRoutes');
 const noteRoutes = require('./routes/noteRoutes');
@@ -46,9 +56,10 @@ app.get('/health', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Express Error:', err.stack);
-  res.status(500).json({ 
-    message: 'Something went wrong!', 
+  console.error('Express Error:', err.stack || err);
+  const status = err.statusCode || err.status || (res.statusCode >= 400 ? res.statusCode : 500);
+  res.status(status).json({ 
+    message: err.message || 'Something went wrong!', 
     error: err.message,
     stack: process.env.NODE_ENV === 'production' ? null : err.stack 
   });

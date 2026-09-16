@@ -7,6 +7,7 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [loading, setLoading] = useState(false);
   
   const { login, googleLogin } = useContext(AuthContext);
@@ -17,15 +18,26 @@ const Login = () => {
     try {
       setLoading(true);
       setError('');
-      const data = await login(email, password);
+      setUnverifiedEmail('');
+      const data = await login(email.trim(), password);
       
-      if (data.requiresVerification) {
-        navigate('/verify-email', { state: { email } });
+      if (data?.requiresVerification) {
+        navigate('/verify-email', { state: { email: data.email || email.trim() } });
       } else {
         navigate('/dashboard');
       }
-    } catch (error) {
-      setError(error.response?.data?.message || 'Invalid credentials or server error');
+    } catch (err) {
+      const resp = err.response?.data;
+      if (resp?.requiresVerification) {
+        setError(resp.message || 'Please verify your email before logging in.');
+        setUnverifiedEmail(resp.email || email.trim());
+      } else if (resp?.message) {
+        setError(resp.message);
+      } else if (!err.response) {
+        setError('Cannot connect to backend server. Please verify backend is running on port 5000.');
+      } else {
+        setError('Invalid credentials or server error');
+      }
     } finally {
       setLoading(false);
     }
@@ -37,7 +49,7 @@ const Login = () => {
       await googleLogin(response.credential);
       navigate('/dashboard');
     } catch (error) {
-      setError('Google authentication failed');
+      setError(error.response?.data?.message || 'Google authentication failed');
     }
   };
 
@@ -51,18 +63,28 @@ const Login = () => {
         </div>
 
         {error && (
-          <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '12px', borderRadius: '8px', marginBottom: '24px', fontSize: '0.85rem', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-            {error}
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '14px', borderRadius: '8px', marginBottom: '24px', fontSize: '0.85rem', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+            <div>{error}</div>
+            {unverifiedEmail && (
+              <button 
+                type="button" 
+                className="btn btn-outline" 
+                style={{ marginTop: '10px', width: '100%', padding: '8px', fontSize: '0.8rem' }}
+                onClick={() => navigate('/verify-email', { state: { email: unverifiedEmail } })}
+              >
+                Verify Code Now →
+              </button>
+            )}
           </div>
         )}
         
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email Address</label>
+            <label>Email Address or Username</label>
             <input 
-              type="email" 
+              type="text" 
               className="input"
-              placeholder="e.g. arpit@kiet.edu" 
+              placeholder="e.g. arpit@kiet.edu or username" 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

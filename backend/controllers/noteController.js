@@ -13,31 +13,36 @@ const uploadNote = async (req, res) => {
     
     if (!title || !subject || !semester || !course) {
       // Remove the uploaded file if validation fails
-      if (req.file) fs.unlinkSync(req.file.path);
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
       return res.status(400).json({ message: 'Please provide title, subject, semester, and course' });
     }
 
     const note = await Note.create({
-      title,
-      subject,
-      semester,
-      course,
+      title: title.trim(),
+      subject: subject.trim(),
+      semester: semester.toString().trim(),
+      course: course.trim(),
       fileUrl: req.file.filename,
       originalFileName: req.file.originalname,
-      uploadedBy: req.user.id,
+      uploadedBy: req.user._id || req.user.id,
     });
 
     // Increment user's upload count and score
-    await User.findByIdAndUpdate(req.user.id, {
+    await User.findByIdAndUpdate(req.user._id || req.user.id, {
       $inc: { uploadCount: 1, score: 10 }
     });
 
     res.status(201).json(note);
   } catch (error) {
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {}
     }
-    res.status(500).json({ message: error.message });
+    console.error('Upload note controller error:', error);
+    res.status(500).json({ message: error.message || 'Failed to upload note' });
   }
 };
 

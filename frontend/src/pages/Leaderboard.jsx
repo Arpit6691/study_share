@@ -35,11 +35,11 @@ const Leaderboard = () => {
           <div className="page-header animate-fade-in">
             <div>
               <h2 className="page-title">Community Top Contributors</h2>
-              <p style={{ color: 'var(--subtext)', marginTop: '8px' }}>Recognizing the students who share the most knowledge.</p>
+              <p style={{ color: 'var(--subtext)', marginTop: '8px' }}>Recognizing the top 5 students who share the most knowledge.</p>
             </div>
             <div style={{ padding: '12px 24px', background: 'rgba(124, 92, 255, 0.1)', border: '1px solid var(--border)', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.4rem' }}>⭐</span>
-                <span style={{ fontWeight: '700' }}>{leaders.length} Rankers</span>
+                <span style={{ fontSize: '1.4rem' }}>🏆</span>
+                <span style={{ fontWeight: '700' }}>Top 5 Rankers</span>
             </div>
           </div>
           
@@ -58,7 +58,7 @@ const Leaderboard = () => {
                   {loading ? (
                     <tr><td colSpan="4" style={{ textAlign: 'center', padding: '100px 0', color: 'var(--subtext)' }}>Gathering contribution data...</td></tr>
                   ) : leaders.length > 0 ? (
-                    leaders.map((user, index) => (
+                    leaders.slice(0, 5).map((user, index) => (
                       <tr key={user._id} className={index < 3 ? 'row-highlight' : ''}>
                         <td>
                            <span style={{ 

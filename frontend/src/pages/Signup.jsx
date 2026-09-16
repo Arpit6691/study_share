@@ -120,6 +120,9 @@ const Signup = () => {
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <GoogleLogin 
             onSuccess={handleGoogleSuccess} 
+            onError={() => {
+              setError('Google Sign-In failed or was closed. Please ensure http://localhost:5173 is added to Authorized JavaScript Origins in Google Cloud Console.');
+            }}
             theme="filled_black" 
             shape="pill"
             width="100%"

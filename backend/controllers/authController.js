@@ -288,16 +288,22 @@ const googleAuth = async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: 'Google token is required' });
     }
+
+    const googleClientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+    if (!googleClientId) {
+      return res.status(500).json({ message: 'Google Client ID is not configured on the backend.' });
+    }
     
+    const oauthClient = new OAuth2Client(googleClientId);
     let payload;
     try {
-      const ticket = await client.verifyIdToken({
+      const ticket = await oauthClient.verifyIdToken({
         idToken: token,
-        audience: process.env.GOOGLE_CLIENT_ID,
+        audience: googleClientId,
       });
       payload = ticket.getPayload();
     } catch (tokenErr) {
-      console.error("Google Token verification failed:", tokenErr.message);
+      console.error("Google Token verification failed:", tokenErr);
       return res.status(401).json({ message: 'Google token verification failed: ' + tokenErr.message });
     }
     
@@ -323,6 +329,9 @@ const googleAuth = async (req, res) => {
         }
         user.username = finalUsername;
       }
+      if (!user.password) {
+        user.password = await bcrypt.hash(Math.random().toString(36).slice(-8) + Date.now(), 10);
+      }
       await user.save();
 
       return res.json({
@@ -332,6 +341,7 @@ const googleAuth = async (req, res) => {
         email: user.email,
         uploadCount: user.uploadCount || 0,
         score: user.score || 0,
+        createdAt: user.createdAt,
         token: generateToken(user._id)
       });
     } else {
@@ -361,6 +371,7 @@ const googleAuth = async (req, res) => {
         email: user.email,
         uploadCount: user.uploadCount || 0,
         score: user.score || 0,
+        createdAt: user.createdAt,
         token: generateToken(user._id)
       });
     }

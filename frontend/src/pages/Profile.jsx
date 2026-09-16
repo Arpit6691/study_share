@@ -24,7 +24,7 @@ const Profile = () => {
             </div>
           </div>
 
-          <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '24px', animationDelay: '0.1s', alignItems: 'start' }}>
+          <div className="profile-layout animate-fade-in" style={{ animationDelay: '0.1s' }}>
             <div className="card" style={{ textAlign: 'center', padding: '40px 24px' }}>
               <div style={{ width: '80px', height: '80px', borderRadius: '24px', background: 'linear-gradient(135deg, var(--primary), var(--primary-light))', margin: '0 auto 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: '800', color: 'white', border: '2px solid rgba(255,255,255,0.05)' }}>
                 {user?.username?.charAt(0).toUpperCase() || user?.name?.charAt(0).toUpperCase() || '?'}

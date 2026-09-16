@@ -13,6 +13,7 @@ import Footer from './components/Footer';
 import Profile from './pages/Profile';
 import Leaderboard from './pages/Leaderboard';
 import VerifyEmail from './pages/VerifyEmail';
+import BottomNav from './components/BottomNav';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
       <AuthProvider>
         <div className="page-wrapper">
           <Navbar />
+          <BottomNav />
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />

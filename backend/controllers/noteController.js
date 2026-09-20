@@ -69,6 +69,7 @@ const uploadNote = async (req, res) => {
         return res.status(400).json({
           success: false,
           message: 'Document validation is temporarily unavailable. Please try again.',
+          reason: validationErr.message || 'Service could not complete document validation.',
           error: validationErr.message,
         });
       }

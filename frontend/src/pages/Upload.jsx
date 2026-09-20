@@ -56,12 +56,7 @@ const Upload = () => {
       console.error('Upload error:', error);
       const resp = error.response?.data;
       const mainMsg = resp?.message || error.message || 'Upload failed';
-      const reasonMsg = resp?.reason;
-
-      setErrorMessage({
-        title: mainMsg,
-        reason: reasonMsg
-      });
+      setErrorMessage(mainMsg);
     } finally {
       setLoading(false);
       setStatusMessage('');
@@ -83,21 +78,20 @@ const Upload = () => {
           <div className="card animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto', animationDelay: '0.1s' }}>
             {errorMessage && (
               <div style={{
-                padding: '16px',
+                padding: '14px 18px',
                 marginBottom: '20px',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '8px',
-                color: '#ef4444'
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                borderRadius: '10px',
+                color: '#ef4444',
+                fontSize: '0.95rem',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
               }}>
-                <div style={{ fontWeight: '600', marginBottom: errorMessage.reason ? '4px' : '0' }}>
-                  {errorMessage.title}
-                </div>
-                {errorMessage.reason && (
-                  <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
-                    <strong>Reason:</strong> {errorMessage.reason}
-                  </div>
-                )}
+                <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                <span>{errorMessage}</span>
               </div>
             )}
 

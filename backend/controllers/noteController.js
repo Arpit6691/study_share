@@ -55,8 +55,7 @@ const uploadNote = async (req, res) => {
           }
           return res.status(400).json({
             success: false,
-            message: 'This PDF does not appear to contain valid academic study material.',
-            reason: validationResult.reason || 'Document does not match allowed study material domain.',
+            message: 'These notes do not belong to this subject. Kindly re-upload relevant study material.',
             category: validationResult.category,
             confidence: validationResult.confidence,
           });

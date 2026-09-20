@@ -72,10 +72,18 @@ const sampleDocumentText = (text, maxChars = 6000) => {
  * @param {object} metadata - Supporting metadata (title, subject, course, originalFileName)
  * @returns {Promise<{ isValid: boolean, category: string, confidence: number, reason: string }>}
  */
+const path = require('path');
+const dotenv = require('dotenv');
+
 const validateStudyDocument = async (text, metadata = {}) => {
   console.log('[DocumentValidation] Starting validation');
 
-  const rawKey = process.env.GEMINI_API_KEY || '';
+  // Dynamically ensure latest .env values are loaded in memory
+  if (!process.env.GEMINI_API_KEY) {
+    dotenv.config({ path: path.join(__dirname, '..', '.env'), override: true });
+  }
+
+  const rawKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY || '';
   const apiKey = rawKey.replace(/;+$/, '').replace(/^['"]|['"]$/g, '').trim();
 
   if (!apiKey) {

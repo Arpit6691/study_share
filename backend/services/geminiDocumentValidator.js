@@ -75,20 +75,35 @@ const sampleDocumentText = (text, maxChars = 6000) => {
 const path = require('path');
 const dotenv = require('dotenv');
 
+const getApiKey = () => {
+  let key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY;
+  if (!key) {
+    try {
+      const envPath = path.resolve(__dirname, '..', '.env');
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        const match = envContent.match(/^GEMINI_API_KEY\s*=\s*(.*)$/m) ||
+                      envContent.match(/^GOOGLE_API_KEY\s*=\s*(.*)$/m) ||
+                      envContent.match(/^GEMINI_KEY\s*=\s*(.*)$/m);
+        if (match && match[1]) {
+          key = match[1].trim();
+        }
+      }
+    } catch (e) {
+      console.warn('[DocumentValidation] Could not read .env file directly:', e.message);
+    }
+  }
+  return (key || '').replace(/;+$/, '').replace(/^['"]|['"]$/g, '').trim();
+};
+
 const validateStudyDocument = async (text, metadata = {}) => {
   console.log('[DocumentValidation] Starting validation');
 
-  // Dynamically ensure latest .env values are loaded in memory
-  if (!process.env.GEMINI_API_KEY) {
-    dotenv.config({ path: path.join(__dirname, '..', '.env'), override: true });
-  }
-
-  const rawKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_KEY || '';
-  const apiKey = rawKey.replace(/;+$/, '').replace(/^['"]|['"]$/g, '').trim();
+  const apiKey = getApiKey();
 
   if (!apiKey) {
     console.error('[DocumentValidation] GEMINI_API_KEY is not configured in environment variables');
-    throw new Error('Document validation is temporarily unavailable. Please verify your GEMINI_API_KEY in .env.');
+    throw new Error('Document validation is temporarily unavailable. Please verify your GEMINI_API_KEY in .env (or in Render environment variables if running in production).');
   }
 
   const allowedDomain = process.env.ALLOWED_DOCUMENT_DOMAIN || 'academic';

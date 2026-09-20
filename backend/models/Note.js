@@ -41,6 +41,14 @@ const noteSchema = new mongoose.Schema({
   averageRating: {
     type: Number,
     default: 0,
+  },
+  aiCategory: {
+    type: String,
+    default: null,
+  },
+  aiConfidence: {
+    type: Number,
+    default: null,
   }
 }, { timestamps: true });
 

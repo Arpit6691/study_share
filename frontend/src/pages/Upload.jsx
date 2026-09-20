@@ -15,12 +15,15 @@ const Upload = () => {
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherValue, setOtherValue] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState(null);
   const navigate = useNavigate();
 
   const { updateUploadCount } = useContext(AuthContext);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
+    setErrorMessage(null);
   };
 
   const handleUpload = async (e) => {
@@ -28,6 +31,9 @@ const Upload = () => {
     if (!file) {
       return alert('Please select a file');
     }
+
+    setErrorMessage(null);
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
 
     const data = new FormData();
     data.append('title', formData.title);
@@ -38,15 +44,27 @@ const Upload = () => {
 
     try {
       setLoading(true);
-      await axios.post('/notes', data);
+      setStatusMessage(isPdf ? 'Checking document content...' : 'Uploading document...');
+      
+      const res = await axios.post('/notes', data);
       updateUploadCount();
-      alert('File uploaded successfully! Your score has increased.');
+      
+      const categoryMsg = res.data.validation?.category ? ` [Category: ${res.data.validation.category}]` : '';
+      alert(`File uploaded successfully!${categoryMsg} Your score has increased.`);
       navigate('/dashboard');
     } catch (error) {
       console.error('Upload error:', error);
-      alert(error.response?.data?.message || error.response?.data?.error || error.message || 'Upload failed');
+      const resp = error.response?.data;
+      const mainMsg = resp?.message || error.message || 'Upload failed';
+      const reasonMsg = resp?.reason;
+
+      setErrorMessage({
+        title: mainMsg,
+        reason: reasonMsg
+      });
     } finally {
       setLoading(false);
+      setStatusMessage('');
     }
   };
 
@@ -63,6 +81,26 @@ const Upload = () => {
           </div>
           
           <div className="card animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto', animationDelay: '0.1s' }}>
+            {errorMessage && (
+              <div style={{
+                padding: '16px',
+                marginBottom: '20px',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '8px',
+                color: '#ef4444'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: errorMessage.reason ? '4px' : '0' }}>
+                  {errorMessage.title}
+                </div>
+                {errorMessage.reason && (
+                  <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                    <strong>Reason:</strong> {errorMessage.reason}
+                  </div>
+                )}
+              </div>
+            )}
+
             <form onSubmit={handleUpload}>
               <div className="form-group">
                 <label>Title</label>
@@ -73,6 +111,7 @@ const Upload = () => {
                   value={formData.title}
                   onChange={(e) => setFormData({...formData, title: e.target.value})}
                   required
+                  disabled={loading}
                 />
               </div>
               
@@ -85,6 +124,7 @@ const Upload = () => {
                   value={formData.subject}
                   onChange={(e) => setFormData({...formData, subject: e.target.value})}
                   required
+                  disabled={loading}
                 />
               </div>
               
@@ -94,6 +134,7 @@ const Upload = () => {
                   className="select"
                   value={formData.semester}
                   onChange={(e) => setFormData({...formData, semester: e.target.value})}
+                  disabled={loading}
                 >
                   {[1,2,3,4,5,6,7,8].map(s => (
                     <option key={s} value={s}>Semester {s}</option>
@@ -111,6 +152,7 @@ const Upload = () => {
                     setFormData({...formData, course: val});
                     setShowOtherInput(val === 'Other');
                   }}
+                  disabled={loading}
                 >
                   <option value="Btech">Btech</option>
                   <option value="MBA">MBA</option>
@@ -128,6 +170,7 @@ const Upload = () => {
                     value={otherValue}
                     onChange={(e) => setOtherValue(e.target.value)}
                     required={showOtherInput}
+                    disabled={loading}
                   />
                 </div>
               )}
@@ -140,6 +183,7 @@ const Upload = () => {
                     className="input"
                     onChange={handleFileChange}
                     required
+                    disabled={loading}
                     style={{ opacity: 1 }}
                     />
                 </div>
@@ -152,7 +196,7 @@ const Upload = () => {
                 style={{ width: '100%', padding: '16px', marginTop: '12px' }}
                 disabled={loading}
               >
-                {loading ? 'Processing Upload...' : 'Publish to Dashboard'}
+                {loading ? (statusMessage || 'Processing Upload...') : 'Publish to Dashboard'}
               </button>
             </form>
           </div>

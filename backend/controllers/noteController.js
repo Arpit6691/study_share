@@ -2,13 +2,14 @@ const Note = require('../models/Note');
 const User = require('../models/User');
 const path = require('path');
 const fs = require('fs');
+const { extractPdfText, validateStudyDocument } = require('../services/geminiDocumentValidator');
 
 const uploadNote = async (req, res) => {
   try {
     const { title, subject, semester, course } = req.body;
 
     if (!req.file) {
-      return res.status(400).json({ message: 'Please upload a file' });
+      return res.status(400).json({ success: false, message: 'Please upload a file' });
     }
     
     if (!title || !subject || !semester || !course) {
@@ -16,7 +17,61 @@ const uploadNote = async (req, res) => {
       if (req.file?.path && fs.existsSync(req.file.path)) {
         try { fs.unlinkSync(req.file.path); } catch (e) {}
       }
-      return res.status(400).json({ message: 'Please provide title, subject, semester, and course' });
+      return res.status(400).json({ success: false, message: 'Please provide title, subject, semester, and course' });
+    }
+
+    const ext = path.extname(req.file.originalname || '').toLowerCase();
+    let validationResult = null;
+
+    // Check if the uploaded document is a PDF and perform AI-based domain validation
+    if (ext === '.pdf') {
+      try {
+        console.log(`[DocumentValidation] Processing uploaded PDF: ${req.file.originalname}`);
+        const { text } = await extractPdfText(req.file.path);
+        console.log(`[DocumentValidation] Text extracted (${text.length} characters)`);
+
+        if (!text || text.trim().length < 30) {
+          if (fs.existsSync(req.file.path)) {
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+          }
+          return res.status(400).json({
+            success: false,
+            message: 'This PDF does not contain sufficient readable text or appears to be empty/scanned without extractable text.',
+            reason: 'Insufficient readable text content found in document for academic domain validation.'
+          });
+        }
+
+        validationResult = await validateStudyDocument(text, {
+          title,
+          subject,
+          semester,
+          course,
+          originalFileName: req.file.originalname,
+        });
+
+        if (!validationResult.isValid) {
+          if (fs.existsSync(req.file.path)) {
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+          }
+          return res.status(400).json({
+            success: false,
+            message: 'This PDF does not appear to contain valid academic study material.',
+            reason: validationResult.reason || 'Document does not match allowed study material domain.',
+            category: validationResult.category,
+            confidence: validationResult.confidence,
+          });
+        }
+      } catch (validationErr) {
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+          try { fs.unlinkSync(req.file.path); } catch (e) {}
+        }
+        console.error('[DocumentValidation] Validation pipeline error:', validationErr.message);
+        return res.status(400).json({
+          success: false,
+          message: 'Document validation is temporarily unavailable. Please try again.',
+          error: validationErr.message,
+        });
+      }
     }
 
     const note = await Note.create({
@@ -27,6 +82,8 @@ const uploadNote = async (req, res) => {
       fileUrl: req.file.filename,
       originalFileName: req.file.originalname,
       uploadedBy: req.user._id || req.user.id,
+      aiCategory: validationResult?.category || null,
+      aiConfidence: validationResult?.confidence || null,
     });
 
     // Increment user's upload count and score
@@ -34,7 +91,16 @@ const uploadNote = async (req, res) => {
       $inc: { uploadCount: 1, score: 10 }
     });
 
-    res.status(201).json(note);
+    res.status(201).json({
+      ...note.toObject(),
+      success: true,
+      message: 'Document uploaded successfully.',
+      validation: validationResult ? {
+        category: validationResult.category,
+        confidence: validationResult.confidence,
+        reason: validationResult.reason
+      } : null
+    });
   } catch (error) {
     if (req.file?.path && fs.existsSync(req.file.path)) {
       try {
@@ -42,7 +108,7 @@ const uploadNote = async (req, res) => {
       } catch (e) {}
     }
     console.error('Upload note controller error:', error);
-    res.status(500).json({ message: error.message || 'Failed to upload note' });
+    res.status(500).json({ success: false, message: error.message || 'Failed to upload note' });
   }
 };
 

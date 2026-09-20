@@ -4,6 +4,7 @@
 .env
 .env.*
 *.env
+!.env.example
 
 # API keys / configs
 config.js

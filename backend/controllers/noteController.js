@@ -169,7 +169,12 @@ const downloadNote = async (req, res) => {
 
       res.download(filePath, note.originalFileName);
     } else {
-      res.status(404).json({ message: 'File not found on server' });
+      console.error(`[Download] Physical file missing for note "${note.title}" (id: ${note._id}). Expected path: ${filePath}`);
+      return res.status(404).json({
+        message: 'This file was removed from the server and is no longer available for download. The uploader may have deleted it, or the server was reset.',
+        noteId: note._id,
+        fileName: note.originalFileName,
+      });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -190,7 +195,12 @@ const previewNote = async (req, res) => {
       // Send the file inline instead of as attachment
       res.sendFile(filePath);
     } else {
-      res.status(404).json({ message: 'File not found on server' });
+      console.error(`[Preview] Physical file missing for note "${note.title}" (id: ${note._id}). Expected path: ${filePath}`);
+      return res.status(404).json({
+        message: 'This file was removed from the server and is no longer available for preview.',
+        noteId: note._id,
+        fileName: note.originalFileName,
+      });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });

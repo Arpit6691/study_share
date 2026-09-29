@@ -7,10 +7,27 @@ const NoteCard = ({ note }) => {
   const canDownload = user && user.uploadCount > 0;
   
   const [downloadCount] = useState(note.downloadCount || 0);
+  const [downloading, setDownloading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+
+  // Helper: read error message from blob response (axios blob responseType returns error body as Blob)
+  const parseBlobError = async (error) => {
+    try {
+      if (error.response?.data instanceof Blob) {
+        const text = await error.response.data.text();
+        const json = JSON.parse(text);
+        return json.message || 'Unknown error';
+      }
+      return error.response?.data?.message || error.message || 'Unknown error';
+    } catch {
+      return error.message || 'Unknown error';
+    }
+  };
 
   const handleDownload = async () => {
-    if (!canDownload) return;
+    if (!canDownload || downloading) return;
     
+    setDownloading(true);
     try {
       const response = await axios.get(`/notes/download/${note._id}`, {
         responseType: 'blob'
@@ -23,23 +40,30 @@ const NoteCard = ({ note }) => {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Download failed', error);
-      alert('Error downloading file. Please try again.');
+      const msg = await parseBlobError(error);
+      alert(`Download failed: ${msg}`);
+    } finally {
+      setDownloading(false);
     }
   };
 
-  const handlePreview = () => {
-    if (!canDownload) return;
-    axios.get(`/notes/preview/${note._id}`, { responseType: 'blob' })
-      .then(response => {
-        const fileURL = URL.createObjectURL(response.data);
-        window.open(fileURL, '_blank');
-      })
-      .catch(error => {
-        console.error("Preview failed", error);
-        alert("Cannot preview this file type.");
-      });
+  const handlePreview = async () => {
+    if (!canDownload || previewing) return;
+    setPreviewing(true);
+    try {
+      const response = await axios.get(`/notes/preview/${note._id}`, { responseType: 'blob' });
+      const fileURL = URL.createObjectURL(response.data);
+      window.open(fileURL, '_blank');
+    } catch (error) {
+      console.error("Preview failed", error);
+      const msg = await parseBlobError(error);
+      alert(`Preview failed: ${msg}`);
+    } finally {
+      setPreviewing(false);
+    }
   };
 
   // Get file icon based on extension
@@ -83,11 +107,21 @@ const NoteCard = ({ note }) => {
       
       {canDownload ? (
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn btn-outline" style={{ flex: 1, padding: '10px' }} onClick={handlePreview}>
-            View
+          <button
+            className="btn btn-outline"
+            style={{ flex: 1, padding: '10px', opacity: previewing ? 0.6 : 1 }}
+            onClick={handlePreview}
+            disabled={previewing || downloading}
+          >
+            {previewing ? '...' : 'View'}
           </button>
-          <button className="btn btn-primary" style={{ flex: 2, padding: '10px' }} onClick={handleDownload}>
-            Download
+          <button
+            className="btn btn-primary"
+            style={{ flex: 2, padding: '10px', opacity: downloading ? 0.6 : 1 }}
+            onClick={handleDownload}
+            disabled={downloading || previewing}
+          >
+            {downloading ? 'Downloading...' : 'Download'}
           </button>
         </div>
       ) : (

@@ -1,24 +1,11 @@
 const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('../utils/cloudinary');
 const path = require('path');
 
 const allowedExtensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt'];
 
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: async (req, file) => {
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    return {
-      folder: 'study_share_uploads',
-      resource_type: 'raw',           // required for non-image files (PDF, DOC, PPT, etc.)
-      format: ext.replace('.', ''),   // preserve original extension
-      public_id: `${file.fieldname}-${Date.now()}`,
-      use_filename: false,
-      unique_filename: true,
-    };
-  },
-});
+// Use memoryStorage so the file bytes are available in req.file.buffer
+// The controller will upload to Cloudinary AFTER validation
+const storage = multer.memoryStorage();
 
 function checkFileType(file, cb) {
   const ext = path.extname(file.originalname || '').toLowerCase();

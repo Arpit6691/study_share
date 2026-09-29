@@ -1,39 +1,29 @@
 const Note = require('../models/Note');
 const User = require('../models/User');
 const path = require('path');
-const { extractPdfText, validateStudyDocument } = require('../services/geminiDocumentValidator');
+const { extractPdfTextFromBuffer, validateStudyDocument } = require('../services/geminiDocumentValidator');
 const cloudinary = require('../utils/cloudinary');
-const https = require('https');
-const http = require('http');
+const streamifier = require('streamifier');
 const fs = require('fs');
-const os = require('os');
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Download a remote URL to a temporary local file.
- * Returns the temp file path; caller is responsible for cleanup.
+ * Uploads a buffer to Cloudinary using a stream (no temp file needed).
  */
-const downloadToTemp = (url) =>
+const uploadBufferToCloudinary = (buffer, options) =>
   new Promise((resolve, reject) => {
-    const ext = path.extname(new URL(url).pathname) || '.pdf';
-    const tmpPath = path.join(os.tmpdir(), `studyshare-${Date.now()}${ext}`);
-    const file = fs.createWriteStream(tmpPath);
-    const protocol = url.startsWith('https') ? https : http;
-    protocol
-      .get(url, (res) => {
-        res.pipe(file);
-        file.on('finish', () => file.close(() => resolve(tmpPath)));
-      })
-      .on('error', (err) => {
-        fs.unlink(tmpPath, () => {});
-        reject(err);
-      });
+    const uploadStream = cloudinary.uploader.upload_stream(options, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+    streamifier.createReadStream(buffer).pipe(uploadStream);
   });
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
 
 const uploadNote = async (req, res) => {
+  let cloudinaryPublicId = null; // track for cleanup on failure
+
   try {
     const { title, subject, semester, course } = req.body;
 
@@ -42,35 +32,28 @@ const uploadNote = async (req, res) => {
     }
 
     if (!title || !subject || !semester || !course) {
-      // Remove the file from Cloudinary if validation fails
-      if (req.file.filename) {
-        try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
-      }
       return res.status(400).json({ success: false, message: 'Please provide title, subject, semester, and course' });
     }
 
     const ext = path.extname(req.file.originalname || '').toLowerCase();
     let validationResult = null;
 
-    // AI-based domain validation for PDFs
+    // ── STEP 1: Validate PDF from in-memory buffer (BEFORE uploading to Cloudinary) ──
     if (ext === '.pdf') {
-      let tmpPath = null;
       try {
-        console.log(`[DocumentValidation] Processing uploaded PDF: ${req.file.originalname}`);
+        console.log(`[Upload] Validating PDF: ${req.file.originalname} (${req.file.size} bytes)`);
 
-        // The file is now on Cloudinary — download it temporarily for text extraction
-        const cloudinaryUrl = req.file.path; // multer-storage-cloudinary sets req.file.path = secure_url
-        tmpPath = await downloadToTemp(cloudinaryUrl);
+        if (!req.file.buffer || req.file.buffer.length === 0) {
+          return res.status(400).json({ success: false, message: 'Uploaded file is empty.' });
+        }
 
-        const { text } = await extractPdfText(tmpPath);
-        console.log(`[DocumentValidation] Text extracted (${text.length} characters)`);
+        const { text } = await extractPdfTextFromBuffer(req.file.buffer);
+        console.log(`[Upload] Extracted ${text.length} chars of text`);
 
         if (!text || text.trim().length < 30) {
-          try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
           return res.status(400).json({
             success: false,
-            message: 'This PDF does not contain sufficient readable text or appears to be empty/scanned without extractable text.',
-            reason: 'Insufficient readable text content found in document for academic domain validation.',
+            message: 'This PDF does not contain sufficient readable text. It may be a scanned image or empty.',
           });
         }
 
@@ -83,7 +66,6 @@ const uploadNote = async (req, res) => {
         });
 
         if (!validationResult.isValid) {
-          try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
           return res.status(400).json({
             success: false,
             message: 'These notes do not belong to this subject. Kindly re-upload relevant study material.',
@@ -91,11 +73,10 @@ const uploadNote = async (req, res) => {
             confidence: validationResult.confidence,
           });
         }
-      } catch (validationErr) {
-        console.error('[DocumentValidation] Validation pipeline error:', validationErr.message);
 
-        // If it's a Gemini SERVICE error (503 overload, quota, network) → fail OPEN:
-        // keep the Cloudinary file and allow the upload to succeed with a warning.
+      } catch (validationErr) {
+        console.error('[Upload] Validation error:', validationErr.message);
+
         const isServiceError =
           validationErr.isServiceError === true ||
           validationErr.message?.includes('GEMINI_SERVICE_UNAVAILABLE') ||
@@ -107,41 +88,46 @@ const uploadNote = async (req, res) => {
           validationErr.message?.toLowerCase().includes('timeout');
 
         if (isServiceError) {
-          // Allow the upload — Gemini is temporarily down, don't punish the user
-          console.warn('[DocumentValidation] Gemini service unavailable — failing OPEN and allowing upload.');
+          // Gemini is down — fail open, allow upload with warning
+          console.warn('[Upload] Gemini unavailable — allowing upload without validation');
           validationResult = {
             isValid: true,
-            category: 'Unverified (AI validation temporarily unavailable)',
+            category: 'Unverified',
             confidence: null,
-            reason: 'AI validation service was temporarily unavailable. Document uploaded without validation.',
+            reason: 'AI validation temporarily unavailable. Document accepted without AI review.',
           };
-          // Fall through to save the note
         } else {
-          // Hard errors (PDF parse failure, bad file, etc.) → reject
-          try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
+          // Hard error (corrupt PDF, parse failure) — reject
           return res.status(400).json({
             success: false,
             message: 'Document could not be validated. Please ensure your PDF is readable and try again.',
             reason: validationErr.message,
           });
         }
-      } finally {
-        if (tmpPath) {
-          try { fs.unlinkSync(tmpPath); } catch (e) {}
-        }
       }
-
     }
 
-    // req.file.path   = Cloudinary secure URL  (e.g. https://res.cloudinary.com/...)
-    // req.file.filename = Cloudinary public_id (e.g. study_share_uploads/file-1234567890.pdf)
+    // ── STEP 2: Upload validated file to Cloudinary via stream ──
+    console.log(`[Upload] Uploading to Cloudinary...`);
+    const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: 'study_share_uploads',
+      resource_type: 'raw',
+      format: ext.replace('.', ''),
+      public_id: `file-${Date.now()}`,
+    });
+
+    cloudinaryPublicId = uploadResult.public_id;
+    const cloudinaryUrl = uploadResult.secure_url;
+    console.log(`[Upload] Cloudinary upload OK: ${cloudinaryUrl}`);
+
+    // ── STEP 3: Save note to MongoDB ──
     const note = await Note.create({
       title: title.trim(),
       subject: subject.trim(),
       semester: semester.toString().trim(),
       course: course.trim(),
-      fileUrl: req.file.path,           // full Cloudinary HTTPS URL
-      cloudinaryPublicId: req.file.filename, // public_id for deletion
+      fileUrl: cloudinaryUrl,
+      cloudinaryPublicId,
       originalFileName: req.file.originalname,
       uploadedBy: req.user._id || req.user.id,
       aiCategory: validationResult?.category || null,
@@ -159,13 +145,14 @@ const uploadNote = async (req, res) => {
       validation: validationResult
         ? { category: validationResult.category, confidence: validationResult.confidence, reason: validationResult.reason }
         : null,
+
     });
   } catch (error) {
-    // Clean up Cloudinary file on unexpected error
-    if (req.file?.filename) {
-      try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
+    // Clean up Cloudinary file on unexpected error (only if it was already uploaded)
+    if (cloudinaryPublicId) {
+      try { await cloudinary.uploader.destroy(cloudinaryPublicId, { resource_type: 'raw' }); } catch (e) {}
     }
-    console.error('Upload note controller error:', error);
+    console.error('[Upload] Unexpected error:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to upload note' });
   }
 };

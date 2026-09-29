@@ -13,35 +13,51 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const extractPdfText = async (filePath) => {
   try {
     const dataBuffer = fs.readFileSync(filePath);
-    let extractedText = '';
-    let numPages = 1;
-
-    if (typeof pdfModule === 'function') {
-      const data = await pdfModule(dataBuffer);
-      extractedText = (data.text || '').trim();
-      numPages = data.numpages || 1;
-    } else if (pdfModule.PDFParse) {
-      const parser = new pdfModule.PDFParse({ data: dataBuffer });
-      const result = await parser.getText();
-      extractedText = (result.text || '').trim();
-      numPages = result.total || 1;
-    } else if (typeof pdfModule.default === 'function') {
-      const data = await pdfModule.default(dataBuffer);
-      extractedText = (data.text || '').trim();
-      numPages = data.numpages || 1;
-    } else {
-      throw new Error('Unsupported PDF parser interface.');
-    }
-
-    return {
-      text: extractedText,
-      numPages,
-    };
+    return await extractFromBuffer(dataBuffer);
   } catch (error) {
     console.error('[DocumentValidation] PDF text extraction error:', error.message);
     throw new Error('Failed to parse PDF document. The file may be corrupted, password-protected, or invalid.');
   }
 };
+
+/**
+ * Extracts readable text from a PDF Buffer (for use with multer memoryStorage).
+ * @param {Buffer} buffer - PDF file buffer
+ * @returns {Promise<{ text: string, numPages: number }>}
+ */
+const extractFromBuffer = async (buffer) => {
+  let extractedText = '';
+  let numPages = 1;
+
+  if (typeof pdfModule === 'function') {
+    const data = await pdfModule(buffer);
+    extractedText = (data.text || '').trim();
+    numPages = data.numpages || 1;
+  } else if (typeof pdfModule.default === 'function') {
+    const data = await pdfModule.default(buffer);
+    extractedText = (data.text || '').trim();
+    numPages = data.numpages || 1;
+  } else if (pdfModule.PDFParse) {
+    const parser = new pdfModule.PDFParse({ data: buffer });
+    const result = await parser.getText();
+    extractedText = (result.text || '').trim();
+    numPages = result.total || 1;
+  } else {
+    throw new Error('Unsupported PDF parser interface.');
+  }
+
+  return { text: extractedText, numPages };
+};
+
+const extractPdfTextFromBuffer = async (buffer) => {
+  try {
+    return await extractFromBuffer(buffer);
+  } catch (error) {
+    console.error('[DocumentValidation] PDF buffer extraction error:', error.message);
+    throw new Error('Failed to parse PDF document. The file may be corrupted, password-protected, or invalid.');
+  }
+};
+
 
 /**
  * Prepares a representative sample of text from the document.
@@ -228,6 +244,8 @@ const validateStudyDocument = async (text, metadata = {}) => {
 
 module.exports = {
   extractPdfText,
+  extractPdfTextFromBuffer,
   sampleDocumentText,
   validateStudyDocument,
 };
+

@@ -92,14 +92,10 @@ const uploadNote = async (req, res) => {
           });
         }
       } catch (validationErr) {
-        try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
-        console.error('[DocumentValidation] Validation pipeline error:', validationErr.message);
-        return res.status(400).json({
-          success: false,
-          message: 'Document validation is temporarily unavailable. Please try again.',
-          reason: validationErr.message || 'Service could not complete document validation.',
-          error: validationErr.message,
-        });
+        // If validation service itself fails (API down, key issue, quota, timeout),
+        // log the error but DO NOT block the upload — just skip AI validation.
+        console.warn('[DocumentValidation] Validation service error (skipping validation):', validationErr.message);
+        validationResult = null; // treat as unvalidated — upload proceeds
       } finally {
         if (tmpPath) {
           try { fs.unlinkSync(tmpPath); } catch (e) {}

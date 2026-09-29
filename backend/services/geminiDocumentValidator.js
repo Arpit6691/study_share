@@ -109,10 +109,8 @@ const validateStudyDocument = async (text, metadata = {}) => {
   const allowedDomain = process.env.ALLOWED_DOCUMENT_DOMAIN || 'academic';
   const modelsToTry = [
     process.env.GEMINI_MODEL,
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-2.0-flash',
-    'gemini-1.5-pro',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
   ].filter(Boolean);
 
   const sampledText = sampleDocumentText(text);

@@ -21,6 +21,10 @@ const noteSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  cloudinaryPublicId: {
+    type: String,
+    default: null, // stores Cloudinary public_id for deletion; null for legacy local-file notes
+  },
   originalFileName: {
     type: String,
     required: true,

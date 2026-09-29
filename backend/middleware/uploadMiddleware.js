@@ -1,27 +1,27 @@
 const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('../utils/cloudinary');
 const path = require('path');
-const fs = require('fs');
 
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    const uploadDir = path.join(__dirname, '..', 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename(req, file, cb) {
-    cb(
-      null,
-      `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
-    );
+const allowedExtensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt'];
+
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    return {
+      folder: 'study_share_uploads',
+      resource_type: 'raw',           // required for non-image files (PDF, DOC, PPT, etc.)
+      format: ext.replace('.', ''),   // preserve original extension
+      public_id: `${file.fieldname}-${Date.now()}`,
+      use_filename: false,
+      unique_filename: true,
+    };
   },
 });
 
 function checkFileType(file, cb) {
-  const allowedExtensions = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt'];
   const ext = path.extname(file.originalname || '').toLowerCase();
-  
   if (allowedExtensions.includes(ext)) {
     return cb(null, true);
   } else {
@@ -31,7 +31,7 @@ function checkFileType(file, cb) {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10000000 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: function (req, file, cb) {
     checkFileType(file, cb);
   },

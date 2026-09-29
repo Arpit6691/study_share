@@ -1,8 +1,37 @@
 const Note = require('../models/Note');
 const User = require('../models/User');
 const path = require('path');
-const fs = require('fs');
 const { extractPdfText, validateStudyDocument } = require('../services/geminiDocumentValidator');
+const cloudinary = require('../utils/cloudinary');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const os = require('os');
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Download a remote URL to a temporary local file.
+ * Returns the temp file path; caller is responsible for cleanup.
+ */
+const downloadToTemp = (url) =>
+  new Promise((resolve, reject) => {
+    const ext = path.extname(new URL(url).pathname) || '.pdf';
+    const tmpPath = path.join(os.tmpdir(), `studyshare-${Date.now()}${ext}`);
+    const file = fs.createWriteStream(tmpPath);
+    const protocol = url.startsWith('https') ? https : http;
+    protocol
+      .get(url, (res) => {
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve(tmpPath)));
+      })
+      .on('error', (err) => {
+        fs.unlink(tmpPath, () => {});
+        reject(err);
+      });
+  });
+
+// ─── Controllers ──────────────────────────────────────────────────────────────
 
 const uploadNote = async (req, res) => {
   try {
@@ -11,11 +40,11 @@ const uploadNote = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'Please upload a file' });
     }
-    
+
     if (!title || !subject || !semester || !course) {
-      // Remove the uploaded file if validation fails
-      if (req.file?.path && fs.existsSync(req.file.path)) {
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      // Remove the file from Cloudinary if validation fails
+      if (req.file.filename) {
+        try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
       }
       return res.status(400).json({ success: false, message: 'Please provide title, subject, semester, and course' });
     }
@@ -23,21 +52,25 @@ const uploadNote = async (req, res) => {
     const ext = path.extname(req.file.originalname || '').toLowerCase();
     let validationResult = null;
 
-    // Check if the uploaded document is a PDF and perform AI-based domain validation
+    // AI-based domain validation for PDFs
     if (ext === '.pdf') {
+      let tmpPath = null;
       try {
         console.log(`[DocumentValidation] Processing uploaded PDF: ${req.file.originalname}`);
-        const { text } = await extractPdfText(req.file.path);
+
+        // The file is now on Cloudinary — download it temporarily for text extraction
+        const cloudinaryUrl = req.file.path; // multer-storage-cloudinary sets req.file.path = secure_url
+        tmpPath = await downloadToTemp(cloudinaryUrl);
+
+        const { text } = await extractPdfText(tmpPath);
         console.log(`[DocumentValidation] Text extracted (${text.length} characters)`);
 
         if (!text || text.trim().length < 30) {
-          if (fs.existsSync(req.file.path)) {
-            try { fs.unlinkSync(req.file.path); } catch (e) {}
-          }
+          try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
           return res.status(400).json({
             success: false,
             message: 'This PDF does not contain sufficient readable text or appears to be empty/scanned without extractable text.',
-            reason: 'Insufficient readable text content found in document for academic domain validation.'
+            reason: 'Insufficient readable text content found in document for academic domain validation.',
           });
         }
 
@@ -50,9 +83,7 @@ const uploadNote = async (req, res) => {
         });
 
         if (!validationResult.isValid) {
-          if (fs.existsSync(req.file.path)) {
-            try { fs.unlinkSync(req.file.path); } catch (e) {}
-          }
+          try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
           return res.status(400).json({
             success: false,
             message: 'These notes do not belong to this subject. Kindly re-upload relevant study material.',
@@ -61,9 +92,7 @@ const uploadNote = async (req, res) => {
           });
         }
       } catch (validationErr) {
-        if (req.file?.path && fs.existsSync(req.file.path)) {
-          try { fs.unlinkSync(req.file.path); } catch (e) {}
-        }
+        try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
         console.error('[DocumentValidation] Validation pipeline error:', validationErr.message);
         return res.status(400).json({
           success: false,
@@ -71,41 +100,44 @@ const uploadNote = async (req, res) => {
           reason: validationErr.message || 'Service could not complete document validation.',
           error: validationErr.message,
         });
+      } finally {
+        if (tmpPath) {
+          try { fs.unlinkSync(tmpPath); } catch (e) {}
+        }
       }
     }
 
+    // req.file.path   = Cloudinary secure URL  (e.g. https://res.cloudinary.com/...)
+    // req.file.filename = Cloudinary public_id (e.g. study_share_uploads/file-1234567890.pdf)
     const note = await Note.create({
       title: title.trim(),
       subject: subject.trim(),
       semester: semester.toString().trim(),
       course: course.trim(),
-      fileUrl: req.file.filename,
+      fileUrl: req.file.path,           // full Cloudinary HTTPS URL
+      cloudinaryPublicId: req.file.filename, // public_id for deletion
       originalFileName: req.file.originalname,
       uploadedBy: req.user._id || req.user.id,
       aiCategory: validationResult?.category || null,
       aiConfidence: validationResult?.confidence || null,
     });
 
-    // Increment user's upload count and score
     await User.findByIdAndUpdate(req.user._id || req.user.id, {
-      $inc: { uploadCount: 1, score: 10 }
+      $inc: { uploadCount: 1, score: 10 },
     });
 
     res.status(201).json({
       ...note.toObject(),
       success: true,
       message: 'Document uploaded successfully.',
-      validation: validationResult ? {
-        category: validationResult.category,
-        confidence: validationResult.confidence,
-        reason: validationResult.reason
-      } : null
+      validation: validationResult
+        ? { category: validationResult.category, confidence: validationResult.confidence, reason: validationResult.reason }
+        : null,
     });
   } catch (error) {
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (e) {}
+    // Clean up Cloudinary file on unexpected error
+    if (req.file?.filename) {
+      try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
     }
     console.error('Upload note controller error:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to upload note' });
@@ -114,33 +146,16 @@ const uploadNote = async (req, res) => {
 
 const getNotes = async (req, res) => {
   try {
-    const { subject, semester, course, search } = req.query;
+    const { subject, semester, course, search, fileType } = req.query;
     let query = {};
 
-    if (course) {
-      query.course = course;
-    }
+    if (course) query.course = course;
+    if (subject) query.subject = { $regex: subject, $options: 'i' };
+    if (semester) query.semester = semester;
+    if (search) query.title = { $regex: search, $options: 'i' };
+    if (fileType) query.originalFileName = { $regex: `\\.${fileType}$`, $options: 'i' };
 
-    if (subject) {
-      query.subject = { $regex: subject, $options: 'i' };
-    }
-    if (semester) {
-      query.semester = semester;
-    }
-    if (search) {
-      query.title = { $regex: search, $options: 'i' };
-    }
-    
-    // Add fileType filter
-    const { fileType } = req.query;
-    if (fileType) {
-      // fileType might specify pdf, doc, ppt, etc.
-      query.originalFileName = { $regex: `\\.${fileType}$`, $options: 'i' };
-    }
-
-    // Exclude uploadedBy from results to maintain anonymity, or just not populate it
     const notes = await Note.find(query).select('-uploadedBy').sort({ createdAt: -1 });
-
     res.status(200).json(notes);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -155,27 +170,33 @@ const downloadNote = async (req, res) => {
       return res.status(404).json({ message: 'Note not found' });
     }
 
-    const filePath = path.join(__dirname, '..', 'uploads', note.fileUrl);
-
-    if (fs.existsSync(filePath)) {
-      // Update note download count
-      note.downloadCount += 1;
-      await note.save();
-
-      // Decrease user score slightly
-      await User.findByIdAndUpdate(req.user.id, {
-        $inc: { score: -1 }
-      });
-
-      res.download(filePath, note.originalFileName);
-    } else {
-      console.error(`[Download] Physical file missing for note "${note.title}" (id: ${note._id}). Expected path: ${filePath}`);
-      return res.status(404).json({
-        message: 'This file was removed from the server and is no longer available for download. The uploader may have deleted it, or the server was reset.',
-        noteId: note._id,
-        fileName: note.originalFileName,
-      });
+    if (!note.fileUrl) {
+      return res.status(404).json({ message: 'No file URL found for this note.' });
     }
+
+    // Update download count & deduct score
+    note.downloadCount += 1;
+    await note.save();
+    await User.findByIdAndUpdate(req.user.id, { $inc: { score: -1 } });
+
+    // Stream the file from Cloudinary through to the client
+    const protocol = note.fileUrl.startsWith('https') ? https : http;
+    const fileName = encodeURIComponent(note.originalFileName || 'download');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    protocol.get(note.fileUrl, (cloudRes) => {
+      if (cloudRes.statusCode !== 200) {
+        console.error(`[Download] Cloudinary returned ${cloudRes.statusCode} for note "${note.title}"`);
+        return res.status(404).json({
+          message: 'The file could not be retrieved from cloud storage. It may have been removed.',
+        });
+      }
+      cloudRes.pipe(res);
+    }).on('error', (err) => {
+      console.error('[Download] Stream error:', err.message);
+      res.status(500).json({ message: 'Failed to stream file from cloud storage.' });
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -189,19 +210,12 @@ const previewNote = async (req, res) => {
       return res.status(404).json({ message: 'Note not found' });
     }
 
-    const filePath = path.join(__dirname, '..', 'uploads', note.fileUrl);
-
-    if (fs.existsSync(filePath)) {
-      // Send the file inline instead of as attachment
-      res.sendFile(filePath);
-    } else {
-      console.error(`[Preview] Physical file missing for note "${note.title}" (id: ${note._id}). Expected path: ${filePath}`);
-      return res.status(404).json({
-        message: 'This file was removed from the server and is no longer available for preview.',
-        noteId: note._id,
-        fileName: note.originalFileName,
-      });
+    if (!note.fileUrl) {
+      return res.status(404).json({ message: 'No file URL found for this note.' });
     }
+
+    // Redirect browser directly to the Cloudinary URL for inline preview
+    res.redirect(note.fileUrl);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -212,16 +226,10 @@ const rateNote = async (req, res) => {
     const { rating } = req.body;
     const note = await Note.findById(req.params.id);
 
-    if (!note) {
-      return res.status(404).json({ message: 'Note not found' });
-    }
-
-    if (rating < 1 || rating > 5) {
-      return res.status(400).json({ message: 'Rating must be between 1 and 5' });
-    }
+    if (!note) return res.status(404).json({ message: 'Note not found' });
+    if (rating < 1 || rating > 5) return res.status(400).json({ message: 'Rating must be between 1 and 5' });
 
     const existingRatingIndex = note.ratings.findIndex(r => r.user.toString() === req.user.id);
-    
     if (existingRatingIndex >= 0) {
       note.ratings[existingRatingIndex].rating = rating;
     } else {
@@ -243,15 +251,9 @@ const getMyNotes = async (req, res) => {
     const { subject, semester, search } = req.query;
     let query = { uploadedBy: req.user.id };
 
-    if (subject) {
-      query.subject = { $regex: subject, $options: 'i' };
-    }
-    if (semester) {
-      query.semester = semester;
-    }
-    if (search) {
-      query.title = { $regex: search, $options: 'i' };
-    }
+    if (subject) query.subject = { $regex: subject, $options: 'i' };
+    if (semester) query.semester = semester;
+    if (search) query.title = { $regex: search, $options: 'i' };
 
     const notes = await Note.find(query).sort({ createdAt: -1 });
     res.status(200).json(notes);
@@ -264,27 +266,26 @@ const deleteNote = async (req, res) => {
   try {
     const note = await Note.findById(req.params.id);
 
-    if (!note) {
-      return res.status(404).json({ message: 'Note not found' });
-    }
+    if (!note) return res.status(404).json({ message: 'Note not found' });
 
-    // Check if user owns the note
     if (note.uploadedBy.toString() !== req.user.id) {
       return res.status(401).json({ message: 'Not authorized to delete this note' });
     }
 
-    const filePath = path.join(__dirname, '..', 'uploads', note.fileUrl);
-    
-    // Delete physical file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // Delete from Cloudinary if we have a public_id stored
+    if (note.cloudinaryPublicId) {
+      try {
+        await cloudinary.uploader.destroy(note.cloudinaryPublicId, { resource_type: 'raw' });
+        console.log(`[Delete] Cloudinary file removed: ${note.cloudinaryPublicId}`);
+      } catch (cloudErr) {
+        console.warn(`[Delete] Could not remove Cloudinary file: ${cloudErr.message}`);
+      }
     }
 
     await note.deleteOne();
 
-    // Decrement user's upload count and score
     await User.findByIdAndUpdate(req.user.id, {
-      $inc: { uploadCount: -1, score: -10 }
+      $inc: { uploadCount: -1, score: -10 },
     });
 
     res.status(200).json({ message: 'Note deleted successfully' });
@@ -297,13 +298,7 @@ const reportNote = async (req, res) => {
   try {
     const { reason } = req.body;
     const Report = require('../models/Report');
-
-    const result = await Report.create({
-      note: req.params.id,
-      reportedBy: req.user.id,
-      reason
-    });
-
+    await Report.create({ note: req.params.id, reportedBy: req.user.id, reason });
     res.status(201).json({ message: 'Report submitted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });

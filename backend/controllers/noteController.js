@@ -92,10 +92,25 @@ const uploadNote = async (req, res) => {
           });
         }
       } catch (validationErr) {
-        // If validation service itself fails (API down, key issue, quota, timeout),
-        // log the error but DO NOT block the upload — just skip AI validation.
-        console.warn('[DocumentValidation] Validation service error (skipping validation):', validationErr.message);
-        validationResult = null; // treat as unvalidated — upload proceeds
+        // Clean up Cloudinary file since we can't validate it
+        try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
+        console.error('[DocumentValidation] Validation pipeline error:', validationErr.message);
+
+        // Distinguish between service errors vs content errors for better messaging
+        const isServiceError =
+          validationErr.message?.toLowerCase().includes('api') ||
+          validationErr.message?.toLowerCase().includes('quota') ||
+          validationErr.message?.toLowerCase().includes('unavailable') ||
+          validationErr.message?.toLowerCase().includes('network') ||
+          validationErr.message?.toLowerCase().includes('timeout');
+
+        return res.status(503).json({
+          success: false,
+          message: isServiceError
+            ? 'AI document validation is temporarily unavailable due to a server issue. Please try uploading again in a moment.'
+            : 'Document could not be validated. Please ensure your PDF is readable and try again.',
+          reason: validationErr.message,
+        });
       } finally {
         if (tmpPath) {
           try { fs.unlinkSync(tmpPath); } catch (e) {}

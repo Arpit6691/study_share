@@ -111,6 +111,9 @@ const validateStudyDocument = async (text, metadata = {}) => {
     process.env.GEMINI_MODEL,
     'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash-preview-04-17',
   ].filter(Boolean);
 
   const sampledText = sampleDocumentText(text);
@@ -149,12 +152,12 @@ const validateStudyDocument = async (text, metadata = {}) => {
   let lastError = null;
 
   for (const modelName of modelsToTry) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const model = genAI.getGenerativeModel({
           model: modelName,
           generationConfig: {
-            responseMimeType: 'application/json',
+            // Note: do NOT use responseMimeType here — it causes empty output on some models
             temperature: 0.1,
           },
           systemInstruction,
@@ -164,15 +167,26 @@ const validateStudyDocument = async (text, metadata = {}) => {
         const response = await result.response;
         const responseText = response.text();
 
+        if (!responseText || !responseText.trim()) {
+          throw new Error('Empty response from model');
+        }
+
         console.log(`[DocumentValidation] Gemini classification completed using model ${modelName}`);
 
         let parsedResult;
         try {
-          parsedResult = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('[DocumentValidation] Failed to parse Gemini JSON response:', parseError.message);
+          // Strip markdown code fences if present
           const cleaned = responseText.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
           parsedResult = JSON.parse(cleaned);
+        } catch (parseError) {
+          console.error('[DocumentValidation] Failed to parse Gemini JSON response:', parseError.message);
+          // Try to extract JSON from response text
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            parsedResult = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error('Could not parse JSON from model response');
+          }
         }
 
         if (typeof parsedResult.isValid !== 'boolean') {
@@ -193,16 +207,23 @@ const validateStudyDocument = async (text, metadata = {}) => {
         };
       } catch (err) {
         lastError = err;
-        console.warn(`[DocumentValidation] Attempt ${attempt} with model ${modelName} failed: ${err.message}`);
-        if (attempt < 2) {
-          await sleep(1000);
+        const is503 = err.message?.includes('503') || err.message?.toLowerCase().includes('unavailable') || err.message?.toLowerCase().includes('overload');
+        console.warn(`[DocumentValidation] Attempt ${attempt}/3 with model ${modelName} failed: ${err.message}`);
+        if (attempt < 3) {
+          // Exponential backoff: 1s, 2s
+          await sleep(attempt * 1000);
         }
+        // If 503 overload, skip remaining retries for this model and try next immediately
+        if (is503 && attempt >= 1) break;
       }
     }
   }
 
   console.error('[DocumentValidation] All Gemini validation attempts failed:', lastError?.message);
-  throw new Error('Document validation is temporarily unavailable. Please try again in a few moments.');
+  // Signal a SERVICE error so the controller can fail-open (allow upload) gracefully
+  const serviceErr = new Error('GEMINI_SERVICE_UNAVAILABLE: Document validation is temporarily unavailable due to high demand. The file has been uploaded successfully.');
+  serviceErr.isServiceError = true;
+  throw serviceErr;
 };
 
 module.exports = {

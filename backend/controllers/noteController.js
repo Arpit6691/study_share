@@ -92,30 +92,45 @@ const uploadNote = async (req, res) => {
           });
         }
       } catch (validationErr) {
-        // Clean up Cloudinary file since we can't validate it
-        try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
         console.error('[DocumentValidation] Validation pipeline error:', validationErr.message);
 
-        // Distinguish between service errors vs content errors for better messaging
+        // If it's a Gemini SERVICE error (503 overload, quota, network) → fail OPEN:
+        // keep the Cloudinary file and allow the upload to succeed with a warning.
         const isServiceError =
-          validationErr.message?.toLowerCase().includes('api') ||
+          validationErr.isServiceError === true ||
+          validationErr.message?.includes('GEMINI_SERVICE_UNAVAILABLE') ||
+          validationErr.message?.toLowerCase().includes('503') ||
+          validationErr.message?.toLowerCase().includes('overload') ||
           validationErr.message?.toLowerCase().includes('quota') ||
           validationErr.message?.toLowerCase().includes('unavailable') ||
           validationErr.message?.toLowerCase().includes('network') ||
           validationErr.message?.toLowerCase().includes('timeout');
 
-        return res.status(503).json({
-          success: false,
-          message: isServiceError
-            ? 'AI document validation is temporarily unavailable due to a server issue. Please try uploading again in a moment.'
-            : 'Document could not be validated. Please ensure your PDF is readable and try again.',
-          reason: validationErr.message,
-        });
+        if (isServiceError) {
+          // Allow the upload — Gemini is temporarily down, don't punish the user
+          console.warn('[DocumentValidation] Gemini service unavailable — failing OPEN and allowing upload.');
+          validationResult = {
+            isValid: true,
+            category: 'Unverified (AI validation temporarily unavailable)',
+            confidence: null,
+            reason: 'AI validation service was temporarily unavailable. Document uploaded without validation.',
+          };
+          // Fall through to save the note
+        } else {
+          // Hard errors (PDF parse failure, bad file, etc.) → reject
+          try { await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' }); } catch (e) {}
+          return res.status(400).json({
+            success: false,
+            message: 'Document could not be validated. Please ensure your PDF is readable and try again.',
+            reason: validationErr.message,
+          });
+        }
       } finally {
         if (tmpPath) {
           try { fs.unlinkSync(tmpPath); } catch (e) {}
         }
       }
+
     }
 
     // req.file.path   = Cloudinary secure URL  (e.g. https://res.cloudinary.com/...)
